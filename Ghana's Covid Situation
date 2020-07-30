@@ -2,7 +2,7 @@ import bs4
 import requests
 import re
 import pandas as pd
-import plotly.graph_objects as go #Sorry no matplotlib :(, plotly is much more attractive xD but only works in jupyter notebooks
+import plotly.graph_objects as go #Sorry no matplotlib :(, plotly is much more attractive xD but it only works in jupyter notebooks
 
 #Regular expression used to only select numeric data in a list
 def getNumbers(array): 
