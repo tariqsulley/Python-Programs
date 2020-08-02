@@ -1,5 +1,6 @@
 from time import sleep, asctime
 import sys
+
 #A dictionary that stores the database of customers
 bank_customers = { 'Tariq':{'J_pip34': 0}, 'Ronaldo':{'P@12cr7':0},
                   'Salah':{'Marh@ba&11':0} }
