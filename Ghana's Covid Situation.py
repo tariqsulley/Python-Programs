@@ -1,8 +1,14 @@
-import bs4
 import requests
+import bs4
 import re
 import pandas as pd
-import plotly.graph_objects as go #Sorry no matplotlib :(, plotly is much more attractive xD but it only works in jupyter notebooks
+import matplotlib.pyplot as plt
+import plotly.graph_objects as go
+from plotly.offline import download_plotlyjs, init_notebook_mode, plot, iplot
+import plotly.express as px
+import plotly.figure_factory as ff
+from scipy import stats
+from math import floor
 
 #Regular expression used to only select numeric data in a list
 def getNumbers(array): 
@@ -14,6 +20,72 @@ def clean(data):
     strings = [str(num) for num in data]
     concatenated = "".join(strings)
     return(concatenated)
+
+# Finds the number of daily cases based on the difference of a current number
+# and it's previous number 
+def daily_values(data,array):
+    for i in range(len(data) - 1):
+        hold = data[i+1] - data[i]
+        array.append(hold)
+       
+ '''
+Uses recursion to find the cumulative sum of all the elements in an array from 
+their respective indices to the start of the array. This is used in the 
+calculation of average daily statistics as everyday's value can be summed with
+all the previous values and divided by the index + 1.
+
+Example:
+Input: [2,14,17,36]
+
+Output: [2, 14+2, 17+14+2, 36+17+14+2]
+
+nb: division of the values is not performed in the cumulative_sum function
+    but in the daily_average function
+
+'''
+def cumulative_sum(data,array):
+    total = 0
+    values = []
+    for i,j in enumerate(data):
+        total = total+j 
+        values.append(total)
+    if total <= 1000 | total<=100:
+        array.append(values)
+        return cumulative_sum(data,array)
+    else:
+        return array.append(values)
+  
+'''
+Finds the average of every element in an array. Each element
+is divided by the index + 1
+
+'''
+def daily_average(data,array):
+    for i in data:
+        for y,k in enumerate(i):
+            array.append( (k) // (y+1) )   
+            
+def monthly(data,array,field):
+    for i,j in enumerate(data):
+        array.append(data[i][field].sum())
+        
+# Correlation matrix
+def plotCorrelationMatrix(df, graphWidth):
+    filename = df.dataframeName
+    df = df.dropna('columns') # drop columns with NaN
+    df = df[[col for col in df if df[col].nunique() > 1]] # keep columns where there are more than 1 unique values
+    if df.shape[1] < 2:
+        print(f'No correlation plots shown: The number of non-NaN or constant columns ({df.shape[1]}) is less than 2')
+        return
+    corr = df.corr()
+    plt.figure(num=None, figsize=(graphWidth, graphWidth), dpi=80, facecolor='w', edgecolor='k')
+    corrMat = plt.matshow(corr, fignum = 1)
+    plt.xticks(range(len(corr.columns)), corr.columns, rotation=90)
+    plt.yticks(range(len(corr.columns)), corr.columns)
+    plt.gca().xaxis.tick_bottom()
+    plt.colorbar(corrMat)
+    plt.title(f'Correlation Matrix for{filename}', fontsize=15)
+    plt.show()
     
 res = requests.get('https://www.worldometers.info/coronavirus/country/ghana/')
 text = bs4.BeautifulSoup(res.text)
@@ -40,9 +112,12 @@ days = days_reg.findall(data_for_days[0])
 cases_reg = re.findall(r'\d{1,7}',data_for_cases[0]) #Edit this line of code if Ghana's Corona Virus Cases surpass 1 million :(
 
 deaths_reg = re.findall(r'\d{1,7}',data_for_deaths[0]) #Edit this line of code if Ghana's Corona Virus Cases surpass 1 million :(
+active_reg = re.findall(r'\d{1,7}',active[0])
+
 
 data_for_cases = [int(i) for i in cases_reg]
 data_for_deaths = [int(i) for i in deaths_reg]
+data_for_active = [int(i) for i in active_reg]
 
 data_for_cases = data_for_cases[350::]
 data_for_deaths = data_for_deaths[350::]
@@ -52,8 +127,13 @@ death_index = data_for_deaths.index(0)
 
 total_cases = data_for_cases[case_index:len(data_for_cases) - 1]
 total_cases = [int(i) for i in total_cases]
+
 total_deaths = data_for_deaths[death_index:len(data_for_deaths) - 1]
 total_deaths = [int(i) for i in total_deaths]
+
+active_cases = data_for_active[active_index:len(data_for_active) - 1]
+active_cases = [int(i) for i in active_cases]
+
 total_cases = total_cases[26::]
 total_deaths = total_deaths[26::]
 
@@ -62,34 +142,106 @@ days = days[ind::]
 ind = days.index('Mar 12')
 days = days[ind::]
 
-data = {'Days': days,
+data = {'Dates':days,
         'Total Cases':total_cases,
-        'Total Deaths': total_deaths
-       }
+        'Total Deaths': total_deaths,
+         'Active Cases': active_cases}
 
+df = pd.DataFrame(data)
 
-original_df = pd.DataFrame(data)
-original_df.reset_index(inplace=True)
-del original_df["index"]
+daily_cases = []
+daily = list(df["Total Cases"])
 
-original_df.to_csv("Ghana's Covid-19 Dataset.csv")
-#Cleaned_df contains same data but with the days before first case recorded removed
-#cleaned_df = original_df.drop([i for i in range(26)],axis=0)
-#cleaned_df.reset_index(inplace=True)
-#cleaned_df.to_csv("Ghana's Covid-19 Dataset.csv")
+daily_values(daily,daily_cases) 
+# 2 is inserted at the first position because Ghana first recorded 2 cases
+daily_cases.insert(0,2)
 
+df["Daily Cases"] = daily_cases
 
+# average daily cases
+daily_cases_sum = []
+cumulative_sum(daily_cases,daily_cases_sum)
 
-y_data = total_cases
-x_data = days
+avg_daily_cases = []
+daily_average([daily_cases_sum[0]],avg_daily_cases)
+df["Average Daily Cases"] = avg_daily_cases
+# daily deaths
+deaths = list(df["Total Deaths"])
+death_list = []
+daily_values(deaths,death_list)
+death_list.insert(0,0)
+df["Daily Deaths"] = death_list
 
-fig = go.Figure()
+# average daily deaths
+summed_deaths = []
+cumulative_sum(death_list,summed_deaths)
+avg_deaths = []
+daily_average([summed_deaths[0]],avg_deaths)
+df["Average Daily Deaths"] = avg_deaths
 
-fig.add_trace(go.Scatter(x=x_data, y=y_data
+# Cumulative recovered cases
+total = df["Total Cases"]
+dead = df["Total Deaths"]
+current = df["Active Cases"]
+recovered = total - dead - current
+df["Recovered"] = recovered
+
+# Daily recovered cases
+daily_recovered = []
+daily_values(recovered,daily_recovered)
+daily_recovered.insert(0,0)
+df["Daily Recovered Cases"] = daily_recovered
+
+#Average daily recovered cases
+summed_recovered = []
+cumulative_sum(daily_recovered,summed_recovered)
+avg_recovered = []
+daily_average( [summed_recovered[0]], avg_recovered)
+df["Average Daily Recovered Cases"] = avg_recovered
+
+nRow, nCol = df.shape
+print(f'There are {nRow} rows and {nCol} columns')
+
+dates = df["Dates"]
+total_active_cases = df["Active Cases"]
+
+total_cases = df["Total Cases"]
+daily_cases = df["Daily Cases"]
+average_daily_cases = df["Average Daily Cases"]
+
+total_deaths = df["Total Deaths"]
+daily_deaths = df["Daily Deaths"]
+daily_average_deaths = df["Average Daily Deaths"]
+
+total_recovered = df["Recovered"]
+daily_recovered = df["Daily Recovered Cases"]
+daily_average_recovered_cases = df["Average Daily Recovered Cases"]
+
+# current average is calculated
+avg_0 = list(total_cases)
+avg = floor( avg_0[-1] / len(avg_0) )
+
+# average is multiplied by number of days in order to draw a horizontal line of average
+avg = [avg] * len(dates)
+
+labels = ["Confirnmed Cases", "Confirmed Deaths","Recovered"]
+pie_chart_data = [daily_cases.sum(),daily_deaths.sum(), daily_recovered.sum()]
+data = go.Pie(labels=labels,values=pie_chart_data)
+layout = dict(
+title= "Ghana's Covid-19 Cases",title_x=0.5
+)
+
+go.Figure(data=data, layout = layout)
+
+style = go.Layout(xaxis={'title':"Days"},yaxis={"title":"Cases"})
+fig = go.Figure(layout = style)
+
+trace_0 = fig.add_trace(go.Scatter(x=dates, y=total_cases,name="Cumulative Cases Count"
     ))
 
+
 fig.update_layout(
-    title_text="Ghana's Corona Virus Cases", title_x=0.5,
+    title_text="Ghana's Corona Virus Cumulative Cases", title_x=0.5,
     xaxis=dict(
         showgrid=True,    
         linewidth=2,
@@ -101,4 +253,126 @@ fig.update_layout(
         ),
     )
     )
+
 fig.show()
+
+months = [ df.iloc[0:19],
+df.loc[20:49],
+df.iloc[50:80],
+df.iloc[81:110],
+df.iloc[111:141],
+df.iloc[142:-1]]
+
+monthly_cases = []
+monthly(months,monthly_cases,"Daily Cases")
+
+monthly_recovered = []
+monthly(months,monthly_recovered,"Daily Recovered Cases")
+
+monthly_deaths = []
+monthly(months,monthly_deaths,"Daily Deaths")
+
+x_axis = ["March", "April","May","June","July","August"]
+style = go.Layout(xaxis={'title':"Months"},yaxis={"title":"Numbers"})
+
+fig = go.Figure(go.Bar(x=x_axis, y=monthly_cases, name='Monthly Cases'),layout = style)
+fig.add_trace(go.Bar(x=x_axis, y=monthly_recovered, name='Monthly Recovered'))
+fig.add_trace(go.Bar(x=x_axis, y=monthly_deaths, name='Monthly Deaths'))
+
+
+fig.update_layout(barmode='stack', title_text="Corona Virus Statistics For Every Month", title_x=0.5,
+)
+fig.show()
+
+style = go.Layout(xaxis={'title':"Days"},yaxis={"title":"Cases"}, width =850)
+
+fig2 = go.Figure(layout=style)
+
+trace_2 = fig2.add_trace(go.Scatter(x=dates, y=daily_cases,  mode='lines+markers', name="Daily Case Count"
+    ))
+
+trace_3 = fig2.add_trace(go.Scatter (x = dates, y=avg, name="Current Average Cases"))
+trace_4 = fig2.add_trace(go.Scatter(x=dates, y = average_daily_cases, name="Average Daily Cases"))
+
+fig2.update_layout(
+    title_text="Ghana's Daily Corona Virus Cases", title_x=0.5,
+    xaxis=dict(
+        showgrid=True,    
+        linewidth=2,
+        ticks='outside',
+        tickangle = -67,
+        tickfont=dict(
+            family='Arial',
+            size=12
+        ),
+    )
+    )
+fig2.show()
+
+style = go.Layout(width=850)
+fig = go.Figure(go.Bar(x=dates, y=daily_recovered, name='Daily Recovered Cases'),layout = style)
+fig.add_trace(go.Scatter(x=dates,y=daily_average_recovered_cases, name = "Average Recovered Cases" ))
+fig.update_layout(
+    title_text="Ghana's Daily Corona Virus Recovered Cases", title_x=0.5,
+    xaxis=dict(
+        showgrid=True,    
+        linewidth=2,
+        ticks='outside',
+        tickangle = -67,
+        tickfont=dict(
+            family='Arial',
+            size=12
+        ),
+        
+    )
+    )
+fig.show()
+
+style = go.Layout(width=850)
+fig = go.Figure(go.Bar(x=dates, y=daily_deaths, name='Daily Deaths'),layout = style)
+fig.add_trace(go.Scatter(x=dates,y=daily_average_deaths, name = "Daily Average Deaths" ))
+fig.update_layout(
+    title_text="Ghana's Daily Corona Virus Deaths Cases", title_x=0.5,
+    xaxis=dict(
+        showgrid=True,    
+        linewidth=2,
+        ticks='outside',
+        tickangle = -67,
+        tickfont=dict(
+            family='Arial',
+            size=12
+        ),
+        
+    )
+    )
+fig.show()
+
+slope, intercept, r, p, std_err = stats.linregress(total_cases, total_deaths)
+
+def regression_line(x):
+  return slope * x + intercept
+
+model = list(map(regression_line, total_cases))
+
+trace_1 = go.Scatter(x = total_cases, y=total_deaths, mode='markers', name="Total Cases")
+trace_2 = go.Scatter(x=total_cases, y=model, name="Regression Line")
+style = go.Layout(yaxis={'title':"Deaths"},xaxis={"title":"Cases"},width = 850)
+data = [trace_1,trace_2]
+
+fig = go.Figure(data = data,layout = style)
+fig.update_layout(
+    title_text=" Linear Regression Model On Ghana's Covid-19 Data", title_x=0.5,
+    xaxis=dict(
+        showgrid=True,    
+        linewidth=2,
+        ticks='outside',
+        tickfont=dict(
+            family='Arial',
+            size=12
+        ),
+    )
+    )
+fig.show()
+
+df.dataframeName = " Ghana's Corona Virus Data"
+plotCorrelationMatrix(df, 10)
